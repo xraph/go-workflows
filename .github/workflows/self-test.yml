@@ -63,7 +63,7 @@ jobs:
       go-versions: '["1.26"]'
       os: '["ubuntu-latest","windows-latest"]'
       coverage: true
-      skip-security: true
+      skip-security: false
 
   smoke-partial-make:
     name: Smoke — Makefile without test-coverage
