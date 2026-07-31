@@ -1,0 +1,47 @@
+name: Self Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  actionlint:
+    name: Lint workflows
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.26'
+          cache: false
+
+      - name: Install actionlint
+        run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+
+      - name: Run actionlint
+        run: actionlint -color
+
+  fixtures:
+    name: Fixtures build
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        fixture: [fixture-lib, fixture-partial-make]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.26'
+          cache-dependency-path: testdata/${{ matrix.fixture }}/go.mod
+
+      - name: Test fixture
+        working-directory: testdata/${{ matrix.fixture }}
+        run: go test ./...
