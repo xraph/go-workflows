@@ -9,6 +9,10 @@ on:
       working-directory:
         type: string
         default: '.'
+      queries:
+        description: 'CodeQL query packs. Empty string selects the default pack.'
+        type: string
+        default: 'security-extended,security-and-quality'
 
 jobs:
   analyze:
@@ -32,6 +36,7 @@ jobs:
         uses: github/codeql-action/init@v4
         with:
           languages: go
+          queries: ${{ inputs.queries }}
 
       - name: Autobuild
         uses: github/codeql-action/autobuild@v4

@@ -39,6 +39,10 @@ on:
       skip-security:
         type: boolean
         default: false
+      gosec-fail-on-findings:
+        description: 'Fail the build on gosec findings. SARIF is uploaded either way.'
+        type: boolean
+        default: true
     secrets:
       CODECOV_TOKEN:
         required: false
@@ -293,6 +297,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      security-events: write
     defaults:
       run:
         shell: bash
@@ -308,12 +313,51 @@ jobs:
           cache-dependency-path: ${{ inputs.working-directory }}/go.mod
 
       - name: Run gosec
+        shell: bash
         env:
           GOSEC_VERSION: ${{ inputs.gosec-version }}
         run: |
           set -euo pipefail
-          go install "github.com/securego/gosec/v2/cmd/gosec@$GOSEC_VERSION"
-          gosec -exclude=G115 -exclude-dir=vendor ./...
+          go install "github.com/securego/gosec/v2/cmd/gosec@${GOSEC_VERSION}"
+          gosec -no-fail -fmt sarif -out gosec.sarif -exclude=G115 -exclude-dir=vendor ./...
+
+      - name: Determine whether SARIF can be uploaded
+        id: sarif
+        shell: bash
+        env:
+          IS_FORK: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork }}
+        run: |
+          set -euo pipefail
+          if [ "$IS_FORK" = 'true' ]; then
+            echo 'upload=false' >> "$GITHUB_OUTPUT"
+            echo "Fork pull request: no write token, so SARIF upload is skipped." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'upload=true' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload gosec SARIF
+        if: steps.sarif.outputs.upload == 'true'
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: ${{ inputs.working-directory }}/gosec.sarif
+          category: gosec
+
+      - name: Report gosec findings
+        shell: bash
+        env:
+          FAIL_ON_FINDINGS: ${{ inputs.gosec-fail-on-findings }}
+        run: |
+          set -euo pipefail
+          COUNT=$(jq '[.runs[].results[]] | length' gosec.sarif)
+          echo "- gosec findings: **${COUNT}**" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$COUNT" -gt 0 ]; then
+            jq -r '.runs[].results[] | "\(.ruleId): \(.message.text)"' gosec.sarif
+            if [ "$FAIL_ON_FINDINGS" = 'true' ]; then
+              echo "Failing because gosec-fail-on-findings is true."
+              exit 1
+            fi
+            echo "gosec-fail-on-findings is false; reporting only."
+          fi
 
       - name: Run govulncheck
         env:

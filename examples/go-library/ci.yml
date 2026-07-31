@@ -7,6 +7,12 @@ on:
   pull_request:
     branches: [main]
 
+# Required: a called workflow can only narrow the caller's token, never widen
+# it. Without security-events: write the gosec SARIF upload fails.
+permissions:
+  contents: read
+  security-events: write
+
 jobs:
   ci:
     uses: xraph/workflows/.github/workflows/go-ci.yml@v1

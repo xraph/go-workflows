@@ -124,3 +124,17 @@ comment. Omitting `contents: write` fails the release.
 protected without an allowance for `github-actions[bot]`, that push fails and
 the release aborts partway. Either exempt the bot, or drop
 `@semantic-release/git` and let the changelog live only in the GitHub release.
+
+## Security reporting
+
+`go-ci.yml` runs gosec with `-no-fail -fmt sarif` and uploads the result, so
+findings appear in the repository's Security tab with history, triage and
+dismissal — not only in job logs. It then fails the build when
+`gosec-fail-on-findings` (default `true`) is set. Pass `false` for
+advisory-only scanning.
+
+SARIF upload is skipped on pull requests from forks, which have no write token.
+Those runs degrade to log-only output.
+
+`codeql.yml` defaults to the `security-extended,security-and-quality` query
+packs. Pass `queries: ''` for CodeQL's standard set.
