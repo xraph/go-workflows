@@ -1,4 +1,4 @@
-module github.com/xraph/go-workflows/testdata/fixture-lib
+module github.com/xraph/workflows/testdata/fixture-lib
 
 go 1.24
 

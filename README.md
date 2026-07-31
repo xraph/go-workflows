@@ -1,4 +1,4 @@
-# xraph/go-workflows
+# xraph/workflows
 
 Reusable GitHub Actions workflows for xraph Go repositories.
 
@@ -7,7 +7,7 @@ Consumers pin to the moving major tag:
 ```yaml
 jobs:
   ci:
-    uses: xraph/go-workflows/.github/workflows/go-ci.yml@v1
+    uses: xraph/workflows/.github/workflows/go-ci.yml@v1
     secrets: inherit
 ```
 

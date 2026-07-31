@@ -1,4 +1,4 @@
-module github.com/xraph/go-workflows/testdata/fixture-partial-make
+module github.com/xraph/workflows/testdata/fixture-partial-make
 
 go 1.24
 
