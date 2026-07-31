@@ -94,3 +94,33 @@ the blast radius of a token stays visible in the caller.
 
 No repository consumes this yet. `forge`, `forgeui` and `smart-form` already
 carry a `.goreleaser.yml` and are the intended first consumers.
+
+## semantic-release
+
+`semantic-release.yml` is language-agnostic. It reads conventional commits,
+computes the next version, writes the changelog, and creates the GitHub release.
+Anything ecosystem-specific belongs in the consumer's own `.releaserc.json`,
+via `@semantic-release/exec`.
+
+The pinned set is Node 22 with `semantic-release@25`. The current plugin
+generation declares `engines.node: ^22.14.0 || >=24.10.0`, so Node 20 fails at
+install. `spindle` and `farp` run `@23` on Node 20; they are unaffected.
+
+### Caller permissions
+
+```yaml
+permissions:
+  contents: write         # tag, and commit CHANGELOG.md via @semantic-release/git
+  issues: write           # comment on resolved issues
+  pull-requests: write    # and on the PRs that closed them
+```
+
+Omitting `issues:` or `pull-requests:` only logs a warning and skips the
+comment. Omitting `contents: write` fails the release.
+
+### Branch protection
+
+`@semantic-release/git` commits `CHANGELOG.md` back to `main`. If `main` is
+protected without an allowance for `github-actions[bot]`, that push fails and
+the release aborts partway. Either exempt the bot, or drop
+`@semantic-release/git` and let the changelog live only in the GitHub release.

@@ -1,0 +1,27 @@
+# Copy to .github/workflows/release.yml in a Go library repository that
+# releases automatically from conventional commits.
+#
+# Releases are gated on CI passing: a tagged version is something downstream
+# consumers pin, so releasing off a red build is worse than releasing late.
+name: Release
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+
+# Required: a called workflow can only narrow the caller's token, never widen it.
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  release:
+    # Never release off a red build.
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    uses: xraph/workflows/.github/workflows/semantic-release.yml@v1
+    with:
+      warm-go-proxy: true

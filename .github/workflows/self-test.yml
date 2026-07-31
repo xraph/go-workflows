@@ -74,3 +74,13 @@ jobs:
       go-versions: '["1.26"]'
       os: '["ubuntu-latest"]'
       skip-security: true
+
+  smoke-semantic-release:
+    name: Smoke — semantic-release dry run
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    uses: ./.github/workflows/semantic-release.yml
+    with:
+      dry-run: true
