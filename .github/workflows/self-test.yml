@@ -6,6 +6,15 @@ on:
   pull_request:
     branches: [main]
 
+# Required: a called workflow can only narrow the caller's token, never widen
+# it. GitHub validates every nested job's permissions against this block at
+# parse time, even jobs skipped at runtime via `if:` — so every job below
+# that calls go-ci.yml needs security-events: write, not just the one
+# smoke job that actually exercises the security job.
+permissions:
+  contents: read
+  security-events: write
+
 jobs:
   actionlint:
     name: Lint workflows
