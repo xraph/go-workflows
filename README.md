@@ -50,6 +50,14 @@ release-then-tag is not possible; this is a known trade-off.
 
 ## Caller permissions
 
-`go-release.yml` needs `contents: write` **declared by the caller**. A reusable
-workflow cannot grant itself permissions. Omitting it produces a failure at
-release-creation time, not at parse time.
+A called (`workflow_call`) workflow can only **narrow** the permissions the
+caller's token already has — it can never widen them. Job-level `permissions`
+inside the reusable workflow are therefore a ceiling, not a grant: every
+caller must declare, at the top level of its own workflow file, whatever
+permissions its jobs actually need.
+
+- `go-release.yml` needs `contents: write` **declared by the caller**.
+  Omitting it produces a failure at release-creation time, not at parse time.
+- `codeql.yml` needs `actions: read`, `contents: read`, and
+  `security-events: write` **declared by the caller**. Omitting it produces a
+  `startup_failure` immediately, since the default repo token is read-only.
