@@ -45,3 +45,23 @@ jobs:
       - name: Test fixture
         working-directory: testdata/${{ matrix.fixture }}
         run: go test ./...
+
+  smoke-fallback:
+    name: Smoke — no Makefile
+    uses: ./.github/workflows/go-ci.yml
+    with:
+      working-directory: testdata/fixture-lib
+      go-versions: '["1.26"]'
+      os: '["ubuntu-latest","windows-latest"]'
+      coverage: true
+      skip-security: true
+
+  smoke-partial-make:
+    name: Smoke — Makefile without test-coverage
+    uses: ./.github/workflows/go-ci.yml
+    with:
+      working-directory: testdata/fixture-partial-make
+      go-versions: '["1.26"]'
+      os: '["ubuntu-latest"]'
+      coverage: true
+      skip-security: true
