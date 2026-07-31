@@ -24,7 +24,7 @@ on:
         default: false
     outputs:
       version:
-        description: 'Released version without a leading v. Empty if nothing was released.'
+        description: 'Released version without a leading v. Also populated on a dry run; gate on `released`, not on this being non-empty.'
         value: ${{ jobs.release.outputs.version }}
       released:
         description: 'true when a release was published.'
@@ -69,7 +69,7 @@ jobs:
           echo "Installing: $BASE $EXTRA"
           # npm package specs never contain spaces, so word splitting is intended here.
           # shellcheck disable=SC2086
-          npm install -g $BASE $EXTRA
+          npm install -g -- $BASE $EXTRA
 
       - name: Run semantic-release
         id: semrel

@@ -2,3 +2,4 @@ coverage.out
 coverage/
 dist/
 RELEASE_NOTES.md
+semantic-release.log

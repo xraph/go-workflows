@@ -19,6 +19,7 @@ jobs:
 | `go-release.yml` | tag-push and manual-dispatch releases |
 | `go-binary-release.yml` | GoReleaser cross-platform binaries |
 | `codeql.yml` | CodeQL analysis for Go |
+| `semantic-release.yml` | conventional-commit versioning and GitHub releases |
 
 ## Pinned tool versions
 
