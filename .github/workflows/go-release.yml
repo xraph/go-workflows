@@ -1,0 +1,280 @@
+name: Go Release
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: 'Version to release, e.g. v1.0.0. Empty means derive from the pushed tag.'
+        type: string
+        default: ''
+      go-version:
+        type: string
+        default: '1.25'
+      module-path:
+        description: 'Go module path. Empty means github.com/<owner>/<repo>.'
+        type: string
+        default: ''
+      submodules:
+        description: 'JSON array of nested module suffixes, e.g. ["errs","log"]'
+        type: string
+        default: '[]'
+      doc-links:
+        description: 'JSON array of repo-relative doc paths, e.g. ["errs/README.md"]'
+        type: string
+        default: '[]'
+      run-tests:
+        type: boolean
+        default: true
+      update-changelog:
+        description: 'Prepend a section to CHANGELOG.md. Dispatch path only.'
+        type: boolean
+        default: true
+      golangci-lint-version:
+        type: string
+        default: 'v2.12.2'
+      working-directory:
+        type: string
+        default: '.'
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Resolve mode and version
+        id: ver
+        shell: bash
+        env:
+          VERSION_IN: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [ -n "$VERSION_IN" ]; then
+            MODE=dispatch
+            VERSION="$VERSION_IN"
+          else
+            MODE=tag
+            VERSION="${GITHUB_REF_NAME}"
+          fi
+          echo "mode=$MODE" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if printf '%s' "$VERSION" | grep -q -- '-'; then
+            echo 'prerelease=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'prerelease=false' >> "$GITHUB_OUTPUT"
+          fi
+          echo "Releasing \`$VERSION\` via **$MODE**" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Validate version format
+        if: steps.ver.outputs.mode == 'dispatch'
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION='${{ steps.ver.outputs.version }}'
+          if ! printf '%s' "$VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'; then
+            echo "Version must look like v1.2.3 or v1.2.3-beta.1, got: $VERSION"
+            exit 1
+          fi
+
+      - name: Ensure tag does not already exist
+        if: steps.ver.outputs.mode == 'dispatch'
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION='${{ steps.ver.outputs.version }}'
+          if git rev-parse "$VERSION" >/dev/null 2>&1; then
+            echo "Tag $VERSION already exists."
+            exit 1
+          fi
+
+      - name: Ensure working tree is clean
+        if: steps.ver.outputs.mode == 'dispatch'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "Working tree is not clean:"
+            git status --short
+            exit 1
+          fi
+
+      - name: Record previous tag
+        id: prev
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ '${{ steps.ver.outputs.mode }}' = 'tag' ]; then
+            PREV=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo '')
+          else
+            PREV=$(git describe --tags --abbrev=0 2>/dev/null || echo '')
+          fi
+          echo "tag=$PREV" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Go
+        if: inputs.run-tests
+        uses: actions/setup-go@v7
+        with:
+          go-version: ${{ inputs.go-version }}
+          cache-dependency-path: ${{ inputs.working-directory }}/go.mod
+
+      - name: Resolve test command
+        id: cmd
+        if: inputs.run-tests
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          set -euo pipefail
+          if [ -f Makefile ] && make -n test >/dev/null 2>&1; then
+            echo 'run=make test' >> "$GITHUB_OUTPUT"
+          else
+            echo 'run=go test -race ./...' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run tests
+        if: inputs.run-tests
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+        run: ${{ steps.cmd.outputs.run }}
+
+      - name: Run golangci-lint
+        if: inputs.run-tests
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: ${{ inputs.golangci-lint-version }}
+          working-directory: ${{ inputs.working-directory }}
+          args: --timeout=5m
+
+      - name: Build changelog body
+        id: changelog
+        shell: bash
+        run: |
+          set -euo pipefail
+          PREV='${{ steps.prev.outputs.tag }}'
+          if [ -z "$PREV" ]; then
+            BODY=$(git log --oneline --decorate)
+          else
+            BODY=$(git log "${PREV}..HEAD" --oneline --decorate)
+          fi
+          {
+            echo 'body<<GHEOF'
+            echo "$BODY"
+            echo 'GHEOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Update CHANGELOG.md
+        if: steps.ver.outputs.mode == 'dispatch' && inputs.update-changelog
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION='${{ steps.ver.outputs.version }}'
+          PREV='${{ steps.prev.outputs.tag }}'
+          DATE=$(date +%Y-%m-%d)
+          {
+            echo '# Changelog'
+            echo
+            echo 'All notable changes to this project are documented in this file.'
+            echo
+            echo "## [$VERSION] - $DATE"
+            echo
+            if [ -z "$PREV" ]; then
+              echo '### Initial release'
+              echo
+              git log --oneline --decorate | sed 's/^/- /'
+            else
+              echo "### Changes since $PREV"
+              echo
+              git log "${PREV}..HEAD" --oneline --decorate | sed 's/^/- /'
+            fi
+            echo
+            if [ -f CHANGELOG.md ]; then
+              tail -n +2 CHANGELOG.md
+            fi
+          } > CHANGELOG.md.new
+          mv CHANGELOG.md.new CHANGELOG.md
+
+      - name: Commit, tag and push
+        if: steps.ver.outputs.mode == 'dispatch'
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION='${{ steps.ver.outputs.version }}'
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if [ -n "$(git status --porcelain)" ]; then
+            git add CHANGELOG.md
+            git commit -m "chore: update CHANGELOG.md for $VERSION"
+            git push origin HEAD:"${GITHUB_REF_NAME}"
+          fi
+          git tag -a "$VERSION" -m "Release $VERSION"
+          git push origin "$VERSION"
+
+      - name: Assemble release notes
+        id: notes
+        shell: bash
+        env:
+          MODULE_IN: ${{ inputs.module-path }}
+          SUBMODULES: ${{ inputs.submodules }}
+          DOC_LINKS: ${{ inputs.doc-links }}
+        run: |
+          set -euo pipefail
+          VERSION='${{ steps.ver.outputs.version }}'
+          MODULE="$MODULE_IN"
+          if [ -z "$MODULE" ]; then
+            MODULE="github.com/${GITHUB_REPOSITORY}"
+          fi
+          REPO_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+          {
+            echo "# Release $VERSION"
+            echo
+            echo '## Installation'
+            echo
+            echo '```bash'
+            echo "go get ${MODULE}@${VERSION}"
+            printf '%s' "$SUBMODULES" | jq -r --arg m "$MODULE" --arg v "$VERSION" \
+              '.[] | "go get \($m)/\(.)@\($v)"'
+            echo '```'
+            echo
+            echo '## Changes'
+            echo
+            echo '```'
+            echo '${{ steps.changelog.outputs.body }}'
+            echo '```'
+            echo
+            echo '## Documentation'
+            echo
+            echo "- [README](${REPO_URL}/blob/${VERSION}/README.md)"
+            printf '%s' "$DOC_LINKS" | jq -r --arg u "$REPO_URL" --arg v "$VERSION" \
+              '.[] | "- [\(.)](\($u)/blob/\($v)/\(.))"'
+            echo "- [pkg.go.dev](https://pkg.go.dev/${MODULE}@${VERSION})"
+          } > RELEASE_NOTES.md
+          echo "module=$MODULE" >> "$GITHUB_OUTPUT"
+          cat RELEASE_NOTES.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Create GitHub release
+        uses: ncipollo/release-action@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ steps.ver.outputs.version }}
+          name: Release ${{ steps.ver.outputs.version }}
+          bodyFile: RELEASE_NOTES.md
+          draft: false
+          prerelease: ${{ steps.ver.outputs.prerelease == 'true' }}
+
+      - name: Warm the Go module proxy
+        shell: bash
+        env:
+          SUBMODULES: ${{ inputs.submodules }}
+        run: |
+          set -euo pipefail
+          VERSION='${{ steps.ver.outputs.version }}'
+          MODULE='${{ steps.notes.outputs.module }}'
+          curl -sSf "https://proxy.golang.org/${MODULE}/@v/${VERSION}.info" || true
+          for sub in $(printf '%s' "$SUBMODULES" | jq -r '.[]'); do
+            curl -sSf "https://proxy.golang.org/${MODULE}/${sub}/@v/${VERSION}.info" || true
+          done

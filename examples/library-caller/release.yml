@@ -1,0 +1,27 @@
+# Copy to .github/workflows/release.yml in a Go library repository.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g. v1.0.0)'
+        required: true
+        type: string
+
+# Required: reusable workflows do not grant themselves permissions.
+permissions:
+  contents: write
+
+jobs:
+  release:
+    uses: xraph/go-workflows/.github/workflows/go-release.yml@v1
+    with:
+      version: ${{ inputs.version }}
+      go-version: '1.26'
+      # For repos with nested modules:
+      # submodules: '["errs","log"]'
+      # doc-links: '["errs/README.md"]'
+    secrets: inherit

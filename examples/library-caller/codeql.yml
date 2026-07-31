@@ -1,0 +1,16 @@
+# Copy to .github/workflows/codeql.yml in a Go repository.
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 0 * * 1'
+
+jobs:
+  analyze:
+    uses: xraph/go-workflows/.github/workflows/codeql.yml@v1
+    with:
+      go-version: '1.26'
