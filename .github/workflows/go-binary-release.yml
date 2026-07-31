@@ -1,0 +1,92 @@
+name: Go Binary Release
+
+on:
+  workflow_call:
+    inputs:
+      go-version:
+        type: string
+        default: '1.25'
+      goreleaser-version:
+        type: string
+        default: 'v2.17.1'
+      goreleaser-args:
+        type: string
+        default: 'release --clean'
+      working-directory:
+        type: string
+        default: '.'
+    secrets:
+      HOMEBREW_TAP_TOKEN:
+        required: false
+      SCOOP_BUCKET_TOKEN:
+        required: false
+      GPG_PRIVATE_KEY:
+        required: false
+
+jobs:
+  goreleaser:
+    name: GoReleaser
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: ${{ inputs.go-version }}
+          cache-dependency-path: ${{ inputs.working-directory }}/go.mod
+
+      - name: Confirm a GoReleaser config is present
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        run: |
+          set -euo pipefail
+          if ! ls .goreleaser.y*ml >/dev/null 2>&1; then
+            echo "No .goreleaser.yml found in ${WORKING_DIRECTORY}."
+            echo "This workflow expects the consumer repository to own its GoReleaser config."
+            exit 1
+          fi
+
+      - name: Check for a GPG key
+        id: gpgcheck
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${GPG_PRIVATE_KEY:-}" ]; then
+            echo 'present=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'present=false' >> "$GITHUB_OUTPUT"
+            echo "No GPG_PRIVATE_KEY set; artifacts will not be signed." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Import GPG key
+        id: gpg
+        if: steps.gpgcheck.outputs.present == 'true'
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "$GPG_PRIVATE_KEY" | gpg --batch --import
+          echo "fingerprint=$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr:/ {print $10; exit}')" >> "$GITHUB_OUTPUT"
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          version: ${{ inputs.goreleaser-version }}
+          args: ${{ inputs.goreleaser-args }}
+          workdir: ${{ inputs.working-directory }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          SCOOP_BUCKET_TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN }}
+          GPG_FINGERPRINT: ${{ steps.gpg.outputs.fingerprint }}

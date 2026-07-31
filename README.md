@@ -61,3 +61,16 @@ permissions its jobs actually need.
 - `codeql.yml` needs `actions: read`, `contents: read`, and
   `security-events: write` **declared by the caller**. Omitting it produces a
   `startup_failure` immediately, since the default repo token is read-only.
+
+## Binary track
+
+`go-binary-release.yml` wraps GoReleaser. The consumer repository owns its
+`.goreleaser.yml` — the config is genuinely per-project (build matrix, ldflags,
+Homebrew and Scoop blocks) and is not something this repository should dictate.
+
+Secrets, all optional: `HOMEBREW_TAP_TOKEN`, `SCOOP_BUCKET_TOKEN`,
+`GPG_PRIVATE_KEY`. Pass them explicitly rather than with `secrets: inherit` so
+the blast radius of a token stays visible in the caller.
+
+No repository consumes this yet. `forge`, `forgeui` and `smart-form` already
+carry a `.goreleaser.yml` and are the intended first consumers.
