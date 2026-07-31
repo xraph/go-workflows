@@ -111,9 +111,11 @@ jobs:
           set -euo pipefail
           if [ -f Makefile ] && make -n test >/dev/null 2>&1; then
             echo 'run=make test' >> "$GITHUB_OUTPUT"
+            # shellcheck disable=SC2016 # backticks are literal markdown formatting, not command substitution
             echo 'source=Makefile target `test`' >> "$GITHUB_OUTPUT"
           else
             echo 'run=go test -race ./...' >> "$GITHUB_OUTPUT"
+            # shellcheck disable=SC2016 # backticks are literal markdown formatting, not command substitution
             echo 'source=fallback `go test -race ./...`' >> "$GITHUB_OUTPUT"
           fi
 
@@ -131,9 +133,11 @@ jobs:
           set -euo pipefail
           if [ -f Makefile ] && make -n test-coverage >/dev/null 2>&1; then
             echo 'run=make test-coverage' >> "$GITHUB_OUTPUT"
+            # shellcheck disable=SC2016 # backticks are literal markdown formatting, not command substitution
             echo 'source=Makefile target `test-coverage`' >> "$GITHUB_OUTPUT"
           else
             echo 'run=go test -race -covermode=atomic -coverprofile=coverage.out ./...' >> "$GITHUB_OUTPUT"
+            # shellcheck disable=SC2016 # backticks are literal markdown formatting, not command substitution
             echo 'source=fallback `go test -coverprofile`' >> "$GITHUB_OUTPUT"
           fi
 
@@ -236,9 +240,11 @@ jobs:
           set -euo pipefail
           if [ -f Makefile ] && make -n vet >/dev/null 2>&1; then
             echo 'run=make vet' >> "$GITHUB_OUTPUT"
+            # shellcheck disable=SC2016 # backticks are literal markdown formatting, not command substitution
             echo 'source=Makefile target `vet`' >> "$GITHUB_OUTPUT"
           else
             echo 'run=go vet ./...' >> "$GITHUB_OUTPUT"
+            # shellcheck disable=SC2016 # backticks are literal markdown formatting, not command substitution
             echo 'source=fallback `go vet ./...`' >> "$GITHUB_OUTPUT"
           fi
 
