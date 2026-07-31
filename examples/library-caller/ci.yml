@@ -13,4 +13,5 @@ jobs:
     with:
       # Match your go.mod directive. Older versions than it will not build.
       go-versions: '["1.24","1.25","1.26"]'
-    secrets: inherit
+    secrets:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}

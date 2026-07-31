@@ -31,7 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        fixture: [fixture-lib, fixture-partial-make]
+        fixture: [fixture-lib, fixture-partial-make, fixture-nodeps]
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -64,4 +64,13 @@ jobs:
       go-versions: '["1.26"]'
       os: '["ubuntu-latest"]'
       coverage: true
+      skip-security: true
+
+  smoke-nodeps:
+    name: Smoke — no dependencies (no go.sum)
+    uses: ./.github/workflows/go-ci.yml
+    with:
+      working-directory: testdata/fixture-nodeps
+      go-versions: '["1.26"]'
+      os: '["ubuntu-latest"]'
       skip-security: true

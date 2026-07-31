@@ -76,7 +76,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          printf '%s' "$GPG_PRIVATE_KEY" | gpg --batch --import
+          printf '%s\n' "$GPG_PRIVATE_KEY" | gpg --batch --import
           echo "fingerprint=$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr:/ {print $10; exit}')" >> "$GITHUB_OUTPUT"
 
       - name: Run GoReleaser

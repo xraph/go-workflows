@@ -32,6 +32,26 @@ jobs:
 
 Bumps are deliberate commits to this repository. See `CHANGELOG.md`.
 
+## Module path for /v2+
+
+`module-path` defaults to `github.com/<owner>/<repo>`, with no major-version
+suffix. Repositories that have gone through a `/v2`, `/v3`, etc. major-version
+bump must set `module-path` explicitly (e.g. `github.com/xraph/foo/v2`) — the
+default will not add the suffix for you.
+
+## Submodules input
+
+`submodules` (on `go-release.yml`) is for **packages within the root module** —
+directories that share the root `go.mod` but get their own install line and
+proxy-warm call in the release notes, like `go-utils`'s `errs` and `log`. It is
+**not** for repositories containing genuinely nested Go modules (their own
+`go.mod`, e.g. `discovery/go.mod` in `farp`). Go resolves versions for a nested
+module from a `<submodule>/vX.Y.Z` tag, and this workflow only ever creates the
+bare `$VERSION` tag on the root module — so a nested module listed here gets an
+install line and proxy warm that fail. Repositories with real nested modules
+need their own per-submodule tagging step; this workflow does not implement
+that.
+
 ## Recovering a failed dispatch release
 
 On the `workflow_dispatch` path the tag is pushed before the GitHub release is

@@ -15,7 +15,7 @@ on:
         type: string
         default: ''
       submodules:
-        description: 'JSON array of nested module suffixes, e.g. ["errs","log"]'
+        description: 'JSON array of package suffixes within the root module, e.g. ["errs","log"] (like go-utils). NOT for repos with genuinely nested go.mod files - those need their own per-submodule tags (e.g. discovery/v1.2.0), which this workflow does not create.'
         type: string
         default: '[]'
       doc-links:
@@ -166,9 +166,9 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "$PREV" ]; then
-            BODY=$(git log --oneline --decorate)
+            BODY=$(git log --oneline)
           else
-            BODY=$(git log "${PREV}..HEAD" --oneline --decorate)
+            BODY=$(git log "${PREV}..HEAD" --oneline)
           fi
           DELIM="GHEOF_$(openssl rand -hex 8)"
           {
@@ -196,11 +196,11 @@ jobs:
             if [ -z "$PREV" ]; then
               echo '### Initial release'
               echo
-              git log --oneline --decorate | sed 's/^/- /'
+              git log --oneline | sed 's/^/- /'
             else
               echo "### Changes since $PREV"
               echo
-              git log "${PREV}..HEAD" --oneline --decorate | sed 's/^/- /'
+              git log "${PREV}..HEAD" --oneline | sed 's/^/- /'
             fi
             echo
             if [ -f CHANGELOG.md ]; then

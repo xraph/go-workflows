@@ -21,7 +21,6 @@ jobs:
     with:
       version: ${{ inputs.version }}
       go-version: '1.26'
-      # For repos with nested modules:
+      # For packages within the root module (not genuinely nested go.mod files):
       # submodules: '["errs","log"]'
       # doc-links: '["errs/README.md"]'
-    secrets: inherit
