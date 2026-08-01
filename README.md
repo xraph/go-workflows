@@ -202,6 +202,12 @@ library crates conventionally gitignore. The fallback generates one on the fly
 rather than making every library consumer pass `skip-audit: true` and ship
 unaudited.
 
+**Splitting gating from non-gating.** `test-extended` and `docs` are non-gating
+by design, but a caller whose required check depends on this workflow would go
+red when a nightly-toolchain leg fails. Split into two calls: one with the
+defaults (gating jobs only), and a second with `only-extended: true` that your
+required check does not depend on.
+
 **Calling this workflow twice in one repo** (a monorepo with two crates) needs a
 distinct `docs-artifact-name` per call — artifact names must be unique within a
 run, and cannot contain `/`, so `working-directory` cannot be used directly.

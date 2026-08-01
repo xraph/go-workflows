@@ -26,6 +26,10 @@ on:
       skip-audit:
         type: boolean
         default: false
+      only-extended:
+        description: 'Run only the non-gating jobs (test-extended, docs) and skip lint/audit/test. Lets a caller split gating from non-gating into two calls, so a nightly-toolchain failure cannot redden a required check.'
+        type: boolean
+        default: false
       docs-artifact-name:
         description: 'Name for the uploaded rustdoc artifact. Give each call a distinct name if one repo calls this workflow more than once.'
         type: string
@@ -42,6 +46,7 @@ on:
 jobs:
   lint:
     name: Lint (rustfmt + clippy)
+    if: ${{ !inputs.only-extended }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -115,7 +120,7 @@ jobs:
 
   audit:
     name: Security Audit
-    if: ${{ !inputs.skip-audit }}
+    if: ${{ !inputs.skip-audit && !inputs.only-extended }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -164,6 +169,7 @@ jobs:
 
   test:
     name: Test (ubuntu / ${{ inputs.toolchain }})
+    if: ${{ !inputs.only-extended }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
