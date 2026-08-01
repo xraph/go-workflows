@@ -48,12 +48,41 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Check the verified commit is still the branch tip
+        id: freshness
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          VERIFIED_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          # On workflow_run, GITHUB_SHA is the default branch's tip, NOT the commit whose
+          # CI just passed. If another merge landed in between, releasing here would tag a
+          # tree that CI never verified. Defer to the newer commit's own CI run instead.
+          if [ "$EVENT_NAME" != 'workflow_run' ] || [ -z "${VERIFIED_SHA:-}" ]; then
+            echo 'proceed=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          HEAD_SHA=$(git rev-parse HEAD)
+          if [ "$VERIFIED_SHA" = "$HEAD_SHA" ]; then
+            echo 'proceed=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'proceed=false' >> "$GITHUB_OUTPUT"
+            {
+              echo "### Release deferred"
+              echo "CI verified \`${VERIFIED_SHA}\` but the branch tip is now \`${HEAD_SHA}\`."
+              echo "A newer commit landed; its own CI run will release. Nothing was tagged."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Set up Node.js
+        if: steps.freshness.outputs.proceed == 'true'
         uses: actions/setup-node@v7
         with:
           node-version: ${{ inputs.node-version }}
 
       - name: Install semantic-release
+        if: steps.freshness.outputs.proceed == 'true'
         shell: bash
         env:
           SEMREL_VERSION: ${{ inputs.semantic-release-version }}
@@ -64,7 +93,12 @@ jobs:
           BASE="$BASE @semantic-release/changelog@7"
           BASE="$BASE @semantic-release/git@11"
           BASE="$BASE @semantic-release/github@12"
-          BASE="$BASE conventional-changelog-conventionalcommits@10"
+          # Pinned to 9, NOT 10. Preset 10 targets the next conventional-changelog-writer
+          # generation; semantic-release@25 uses release-notes-generator@14 -> writer@8.
+          # With preset 10 the writerOpts shape does not match and the writer silently
+          # emits only the version header, discarding every section. That shipped once:
+          # xraph/confy v1.0.0 has a 22-byte CHANGELOG despite 3 feat: and 3 fix: commits.
+          BASE="$BASE conventional-changelog-conventionalcommits@9"
           EXTRA=$(printf '%s' "$EXTRA_PLUGINS" | jq -r 'join(" ")')
           echo "Installing: $BASE $EXTRA"
           # npm package specs never contain spaces, so word splitting is intended here.
@@ -73,6 +107,7 @@ jobs:
 
       - name: Run semantic-release
         id: semrel
+        if: steps.freshness.outputs.proceed == 'true'
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -91,6 +126,9 @@ jobs:
 
           VERSION=""
           RELEASED=false
+          # Version is scraped from the log. `tail -1` keeps this correct only because
+          # semantic-release logs the success line last; a future plugin that logs after
+          # `success` would break the assumption.
           if grep -qE 'Published release|Release note for version' semantic-release.log; then
             VERSION=$(grep -oE '(Published release|Release note for version) [0-9]+\.[0-9]+\.[0-9]+[-+.0-9A-Za-z]*' semantic-release.log \
               | tail -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+[-+.0-9A-Za-z]*')
@@ -109,6 +147,24 @@ jobs:
             fi
             echo "- dry run: \`$DRY_RUN\`"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Assert release notes are not empty
+        if: inputs.dry-run && steps.semrel.outputs.version != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Regression test for the conventional-changelog preset incompatibility that
+          # shipped a 22-byte CHANGELOG to xraph/confy. A version was computed, so the
+          # notes must contain at least one section heading. Exiting 0 when no version
+          # was computed is handled by the step's `if:` — nothing to assert in that case.
+          if ! grep -q '^###' semantic-release.log; then
+            echo "A version was computed but the generated notes contain no '###' section."
+            echo "This is the signature of a conventional-changelog preset/writer mismatch."
+            echo "--- captured notes ---"
+            sed -n '/Release note for version/,$p' semantic-release.log | head -40
+            exit 1
+          fi
+          echo "- notes contain section headings: OK" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Warm the Go module proxy
         if: inputs.warm-go-proxy && steps.semrel.outputs.released == 'true'

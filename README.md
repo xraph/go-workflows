@@ -1,14 +1,33 @@
 # xraph/workflows
 
-Reusable GitHub Actions workflows for xraph Go repositories.
+Reusable GitHub Actions workflows for the xraph org. The Go track is complete;
+Rust, Node/TypeScript and Dart/Flutter tracks land beside it, sharing the same
+`semantic-release.yml` spine.
 
-Consumers pin to the moving major tag:
+Consumers pin to the moving major tag. A caller must declare the permissions its
+workflow needs — a called workflow can only *narrow* the caller's token, never
+widen it — and should pass secrets explicitly rather than with `secrets: inherit`:
 
 ```yaml
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  security-events: write   # required for the gosec SARIF upload
+
 jobs:
   ci:
     uses: xraph/workflows/.github/workflows/go-ci.yml@v1
-    secrets: inherit
+    with:
+      go-versions: '["1.25","1.26"]'   # must not list a version below your go.mod directive
+    secrets:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 ```
 
 ## Workflows
@@ -77,11 +96,29 @@ inside the reusable workflow are therefore a ceiling, not a grant: every
 caller must declare, at the top level of its own workflow file, whatever
 permissions its jobs actually need.
 
+- `go-ci.yml` needs `contents: read` and `security-events: write` **declared by
+  the caller**. Without the latter the gosec SARIF upload fails, since the
+  default repo token is read-only.
 - `go-release.yml` needs `contents: write` **declared by the caller**.
   Omitting it produces a failure at release-creation time, not at parse time.
 - `codeql.yml` needs `actions: read`, `contents: read`, and
   `security-events: write` **declared by the caller**. Omitting it produces a
   `startup_failure` immediately, since the default repo token is read-only.
+- `semantic-release.yml` needs `contents: write`, `issues: write` and
+  `pull-requests: write`. Only the first is fatal if omitted; the other two
+  degrade to a logged warning and skipped issue/PR comments.
+
+GitHub validates the permissions of **every** nested job in a locally-called
+reusable workflow at parse time, including jobs skipped by `if:`. An under-grant
+does not skip a step — it fails the whole run with `startup_failure`.
+
+## Squash-merging and release types
+
+When you squash-merge, the **pull request title** becomes the commit message the
+analyzer sees. Squashing genuine `fix:` or `feat:` commits under a `ci:` or
+`chore:` title suppresses the release entirely — the individual commit types are
+gone. This already happened once here, on `xraph/confy` PR #1. Title the PR with
+the highest-impact type it contains.
 
 ## Binary track
 
