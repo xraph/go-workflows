@@ -197,6 +197,15 @@ which it chose in the run summary.
 default read token suffices — unlike `go-ci.yml`, whose callers must grant
 `security-events: write`.
 
+**Library crates are audited too.** `cargo-audit` needs a `Cargo.lock`, which
+library crates conventionally gitignore. The fallback generates one on the fly
+rather than making every library consumer pass `skip-audit: true` and ship
+unaudited.
+
+**Calling this workflow twice in one repo** (a monorepo with two crates) needs a
+distinct `docs-artifact-name` per call — artifact names must be unique within a
+run, and cannot contain `/`, so `working-directory` cannot be used directly.
+
 Rust crates frequently need native build dependencies. Pass them with
 `system-deps-ubuntu` (apt) and `system-deps-macos` (brew); both default to empty.
 

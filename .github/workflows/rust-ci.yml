@@ -26,6 +26,10 @@ on:
       skip-audit:
         type: boolean
         default: false
+      docs-artifact-name:
+        description: 'Name for the uploaded rustdoc artifact. Give each call a distinct name if one repo calls this workflow more than once.'
+        type: string
+        default: 'documentation'
       system-deps-ubuntu:
         description: 'Space-separated apt packages, e.g. "pkg-config libssl-dev protobuf-compiler"'
         type: string
@@ -142,7 +146,10 @@ jobs:
             echo 'run=make audit' >> "$GITHUB_OUTPUT"
             echo 'source=Makefile target audit' >> "$GITHUB_OUTPUT"
           else
-            echo 'run=cargo audit' >> "$GITHUB_OUTPUT"
+            # Library crates conventionally gitignore Cargo.lock, but cargo-audit
+            # requires one. Generating it here means library consumers get audited
+            # instead of having to pass skip-audit: true.
+            echo 'run=[ -f Cargo.lock ] || cargo generate-lockfile; cargo audit' >> "$GITHUB_OUTPUT"
             echo 'source=fallback cargo audit' >> "$GITHUB_OUTPUT"
           fi
 
@@ -285,27 +292,35 @@ jobs:
           set -euo pipefail
           if [ -f Makefile ] && make -n build >/dev/null 2>&1; then
             echo 'build=make build' >> "$GITHUB_OUTPUT"
+            echo 'buildsrc=Makefile target build' >> "$GITHUB_OUTPUT"
           else
             echo 'build=cargo build --all-features' >> "$GITHUB_OUTPUT"
+            echo 'buildsrc=fallback cargo build' >> "$GITHUB_OUTPUT"
           fi
           if [ -f Makefile ] && make -n test >/dev/null 2>&1; then
             echo 'test=make test' >> "$GITHUB_OUTPUT"
+            echo 'testsrc=Makefile target test' >> "$GITHUB_OUTPUT"
           else
             echo 'test=cargo test --all-features' >> "$GITHUB_OUTPUT"
+            echo 'testsrc=fallback cargo test' >> "$GITHUB_OUTPUT"
           fi
 
       - name: Build
         env:
           CMD: ${{ steps.cmd.outputs.build }}
+          SRC: ${{ steps.cmd.outputs.buildsrc }}
         run: |
           set -euo pipefail
+          printf -- '- build: %s\n' "$SRC" >> "$GITHUB_STEP_SUMMARY"
           eval "$CMD"
 
       - name: Run tests
         env:
           CMD: ${{ steps.cmd.outputs.test }}
+          SRC: ${{ steps.cmd.outputs.testsrc }}
         run: |
           set -euo pipefail
+          printf -- '- test: %s\n' "$SRC" >> "$GITHUB_STEP_SUMMARY"
           eval "$CMD"
 
   docs:
@@ -349,19 +364,29 @@ jobs:
           set -euo pipefail
           if [ -f Makefile ] && make -n docs >/dev/null 2>&1; then
             echo 'run=make docs' >> "$GITHUB_OUTPUT"
+            echo 'source=Makefile target docs' >> "$GITHUB_OUTPUT"
           else
             echo 'run=cargo doc --no-deps --all-features' >> "$GITHUB_OUTPUT"
+            echo 'source=fallback cargo doc' >> "$GITHUB_OUTPUT"
           fi
 
       - name: Build documentation
         env:
           CMD: ${{ steps.cmd.outputs.run }}
+          SRC: ${{ steps.cmd.outputs.source }}
         run: |
           set -euo pipefail
+          printf -- '- docs: %s\n' "$SRC" >> "$GITHUB_STEP_SUMMARY"
           eval "$CMD"
 
       - name: Upload documentation
         uses: actions/upload-artifact@v7
         with:
-          name: documentation
+          # A repo calling this workflow twice must give each call a distinct
+          # name; artifact names cannot contain '/', so working-directory
+          # cannot simply be interpolated here.
+          name: ${{ inputs.docs-artifact-name }}
           path: ${{ inputs.working-directory }}/target/doc
+          # A docs command that writes outside target/doc would otherwise produce
+          # a green run and an empty artifact.
+          if-no-files-found: error
