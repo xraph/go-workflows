@@ -6,19 +6,12 @@ on:
   pull_request:
     branches: [main]
 
-# Required: a called workflow can only narrow the caller's token, never widen
-# it. GitHub validates every nested job's permissions against this block at
-# parse time, even jobs skipped at runtime via `if:` — so every job below
-# that calls go-ci.yml needs security-events: write, not just the one
-# smoke job that actually exercises the security job.
-permissions:
-  contents: read
-  security-events: write
-
 jobs:
   actionlint:
     name: Lint workflows
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -38,6 +31,8 @@ jobs:
   fixtures:
     name: Fixtures build
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       matrix:
         fixture: [fixture-lib, fixture-partial-make, fixture-nodeps]
@@ -57,6 +52,9 @@ jobs:
 
   smoke-fallback:
     name: Smoke — no Makefile
+    permissions:
+      contents: read
+      security-events: write
     uses: ./.github/workflows/go-ci.yml
     with:
       working-directory: testdata/fixture-lib
@@ -67,6 +65,9 @@ jobs:
 
   smoke-partial-make:
     name: Smoke — Makefile without test-coverage
+    permissions:
+      contents: read
+      security-events: write
     uses: ./.github/workflows/go-ci.yml
     with:
       working-directory: testdata/fixture-partial-make
@@ -77,6 +78,9 @@ jobs:
 
   smoke-nodeps:
     name: Smoke — no dependencies (no go.sum)
+    permissions:
+      contents: read
+      security-events: write
     uses: ./.github/workflows/go-ci.yml
     with:
       working-directory: testdata/fixture-nodeps
