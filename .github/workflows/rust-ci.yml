@@ -26,6 +26,10 @@ on:
       skip-audit:
         type: boolean
         default: false
+      cargo-flags:
+        description: 'Feature flags for the fallback cargo commands. Crates with mutually exclusive features cannot use --all-features and should pass e.g. "--features rustls" or "" here.'
+        type: string
+        default: '--all-features'
       only-extended:
         description: 'Run only the non-gating jobs (test-extended, docs) and skip lint/audit/test. Lets a caller split gating from non-gating into two calls, so a nightly-toolchain failure cannot redden a required check.'
         type: boolean
@@ -83,6 +87,8 @@ jobs:
 
       - name: Resolve commands
         id: cmd
+        env:
+          CARGO_FLAGS: ${{ inputs.cargo-flags }}
         run: |
           set -euo pipefail
           if [ -f Makefile ] && make -n fmt >/dev/null 2>&1; then
@@ -96,7 +102,7 @@ jobs:
             echo 'clippy=make clippy' >> "$GITHUB_OUTPUT"
             echo 'clippysrc=Makefile target clippy' >> "$GITHUB_OUTPUT"
           else
-            echo 'clippy=cargo clippy --all-targets --all-features -- -D warnings' >> "$GITHUB_OUTPUT"
+            echo "clippy=cargo clippy --all-targets ${CARGO_FLAGS} -- -D warnings" >> "$GITHUB_OUTPUT"
             echo 'clippysrc=fallback cargo clippy' >> "$GITHUB_OUTPUT"
           fi
 
@@ -205,20 +211,22 @@ jobs:
 
       - name: Resolve commands
         id: cmd
+        env:
+          CARGO_FLAGS: ${{ inputs.cargo-flags }}
         run: |
           set -euo pipefail
           if [ -f Makefile ] && make -n build >/dev/null 2>&1; then
             echo 'build=make build' >> "$GITHUB_OUTPUT"
             echo 'buildsrc=Makefile target build' >> "$GITHUB_OUTPUT"
           else
-            echo 'build=cargo build --all-features' >> "$GITHUB_OUTPUT"
+            echo "build=cargo build ${CARGO_FLAGS}" >> "$GITHUB_OUTPUT"
             echo 'buildsrc=fallback cargo build' >> "$GITHUB_OUTPUT"
           fi
           if [ -f Makefile ] && make -n test >/dev/null 2>&1; then
             echo 'test=make test' >> "$GITHUB_OUTPUT"
             echo 'testsrc=Makefile target test' >> "$GITHUB_OUTPUT"
           else
-            echo 'test=cargo test --all-features' >> "$GITHUB_OUTPUT"
+            echo "test=cargo test ${CARGO_FLAGS}" >> "$GITHUB_OUTPUT"
             echo 'testsrc=fallback cargo test' >> "$GITHUB_OUTPUT"
           fi
 
@@ -294,20 +302,22 @@ jobs:
 
       - name: Resolve commands
         id: cmd
+        env:
+          CARGO_FLAGS: ${{ inputs.cargo-flags }}
         run: |
           set -euo pipefail
           if [ -f Makefile ] && make -n build >/dev/null 2>&1; then
             echo 'build=make build' >> "$GITHUB_OUTPUT"
             echo 'buildsrc=Makefile target build' >> "$GITHUB_OUTPUT"
           else
-            echo 'build=cargo build --all-features' >> "$GITHUB_OUTPUT"
+            echo "build=cargo build ${CARGO_FLAGS}" >> "$GITHUB_OUTPUT"
             echo 'buildsrc=fallback cargo build' >> "$GITHUB_OUTPUT"
           fi
           if [ -f Makefile ] && make -n test >/dev/null 2>&1; then
             echo 'test=make test' >> "$GITHUB_OUTPUT"
             echo 'testsrc=Makefile target test' >> "$GITHUB_OUTPUT"
           else
-            echo 'test=cargo test --all-features' >> "$GITHUB_OUTPUT"
+            echo "test=cargo test ${CARGO_FLAGS}" >> "$GITHUB_OUTPUT"
             echo 'testsrc=fallback cargo test' >> "$GITHUB_OUTPUT"
           fi
 
@@ -366,13 +376,15 @@ jobs:
 
       - name: Resolve docs command
         id: cmd
+        env:
+          CARGO_FLAGS: ${{ inputs.cargo-flags }}
         run: |
           set -euo pipefail
           if [ -f Makefile ] && make -n docs >/dev/null 2>&1; then
             echo 'run=make docs' >> "$GITHUB_OUTPUT"
             echo 'source=Makefile target docs' >> "$GITHUB_OUTPUT"
           else
-            echo 'run=cargo doc --no-deps --all-features' >> "$GITHUB_OUTPUT"
+            echo "run=cargo doc --no-deps ${CARGO_FLAGS}" >> "$GITHUB_OUTPUT"
             echo 'source=fallback cargo doc' >> "$GITHUB_OUTPUT"
           fi
 

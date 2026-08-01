@@ -98,6 +98,15 @@ jobs:
     with:
       dry-run: true
 
+  smoke-rust-make:
+    name: Smoke — Rust partial Makefile
+    permissions:
+      contents: read
+    uses: ./.github/workflows/rust-ci.yml
+    with:
+      working-directory: testdata/fixture-rust-make
+      skip-audit: false
+
   smoke-rust:
     name: Smoke — Rust fallback path
     permissions:
