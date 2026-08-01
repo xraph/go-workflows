@@ -1,0 +1,29 @@
+# Copy to .github/workflows/ci.yml in a Rust repository.
+#
+# Unlike the Go CI caller, this needs no `permissions:` block — nothing in
+# rust-ci.yml uploads SARIF, so the default read token is sufficient.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Exercise the expensive legs off the PR path so per-PR feedback stays fast.
+    - cron: '0 6 * * *'
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  ci:
+    uses: xraph/workflows/.github/workflows/rust-ci.yml@v1
+    with:
+      # The caller owns the policy for when the expensive matrix runs.
+      run-extended: ${{ github.event_name == 'schedule' || github.ref == 'refs/heads/main' }}
+      build-docs: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      # Rust crates often need native toolchains. Leave empty if yours does not.
+      system-deps-ubuntu: 'pkg-config libssl-dev protobuf-compiler'
+      system-deps-macos: 'protobuf'

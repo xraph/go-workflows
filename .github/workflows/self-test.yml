@@ -97,3 +97,12 @@ jobs:
     uses: ./.github/workflows/semantic-release.yml
     with:
       dry-run: true
+
+  smoke-rust:
+    name: Smoke — Rust fallback path
+    permissions:
+      contents: read
+    uses: ./.github/workflows/rust-ci.yml
+    with:
+      working-directory: testdata/fixture-rust
+      skip-audit: false

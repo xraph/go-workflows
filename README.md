@@ -38,6 +38,7 @@ jobs:
 | `go-release.yml` | tag-push and manual-dispatch releases |
 | `go-binary-release.yml` | GoReleaser cross-platform binaries |
 | `codeql.yml` | CodeQL analysis for Go |
+| `rust-ci.yml` | lint, security audit, build + test for Rust |
 | `semantic-release.yml` | conventional-commit versioning and GitHub releases |
 
 ## Pinned tool versions
@@ -176,3 +177,32 @@ Those runs degrade to log-only output.
 
 `codeql.yml` defaults to the `security-extended,security-and-quality` query
 packs. Pass `queries: ''` for CodeQL's standard set.
+
+## Rust track
+
+`rust-ci.yml` runs lint (rustfmt + clippy), a security audit (`cargo-audit`),
+and build + test. Two further jobs are opt-in and non-gating: `test-extended`
+(an OS × toolchain matrix) and `docs`.
+
+That split is deliberate — only the fast jobs gate merges, so the expensive
+legs can run on `main` and a nightly cron without slowing per-PR feedback.
+The caller decides when, by passing its own expression to `run-extended`.
+
+Like `go-ci.yml`, commands are resolved **per Makefile target**: if the repo has
+a Makefile defining `fmt`, `clippy`, `audit`, `build`, `test` or `docs`, that
+target is used; otherwise the equivalent `cargo` command runs. Each job records
+which it chose in the run summary.
+
+**Callers need no `permissions:` block.** Nothing here uploads SARIF, so the
+default read token suffices — unlike `go-ci.yml`, whose callers must grant
+`security-events: write`.
+
+Rust crates frequently need native build dependencies. Pass them with
+`system-deps-ubuntu` (apt) and `system-deps-macos` (brew); both default to empty.
+
+### There is deliberately no Rust release workflow
+
+`octopus` generates its release pipeline with cargo-dist from
+`dist-workspace.toml`, and `farp-rust` is released by `farp`'s semantic-release
+because its version is `farp`'s version. Both work; neither should be replaced
+by a shared workflow.

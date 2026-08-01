@@ -1,0 +1,367 @@
+name: Rust CI
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: 'Directory containing Cargo.toml'
+        type: string
+        default: '.'
+      toolchain:
+        description: 'Rust toolchain for the gating jobs'
+        type: string
+        default: 'stable'
+      run-extended:
+        description: 'Run the OS x toolchain matrix. The caller supplies its own policy expression.'
+        type: boolean
+        default: false
+      extended-matrix:
+        description: 'JSON array of {os, toolchain} objects'
+        type: string
+        default: '[{"os":"macos-latest","toolchain":"stable"},{"os":"ubuntu-latest","toolchain":"nightly"}]'
+      build-docs:
+        description: 'Build rustdoc and upload it as an artifact'
+        type: boolean
+        default: false
+      skip-audit:
+        type: boolean
+        default: false
+      system-deps-ubuntu:
+        description: 'Space-separated apt packages, e.g. "pkg-config libssl-dev protobuf-compiler"'
+        type: string
+        default: ''
+      system-deps-macos:
+        description: 'Space-separated brew packages, e.g. "protobuf"'
+        type: string
+        default: ''
+
+jobs:
+  lint:
+    name: Lint (rustfmt + clippy)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ inputs.toolchain }}
+          components: rustfmt, clippy
+
+      - name: Cache build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ inputs.working-directory }}
+
+      - name: Install system dependencies
+        env:
+          DEPS: ${{ inputs.system-deps-ubuntu }}
+        run: |
+          set -euo pipefail
+          if [ -n "$DEPS" ]; then
+            sudo apt-get update
+            # Package names never contain spaces; word splitting is intended.
+            # shellcheck disable=SC2086
+            sudo apt-get install -y $DEPS
+          fi
+
+      - name: Resolve commands
+        id: cmd
+        run: |
+          set -euo pipefail
+          if [ -f Makefile ] && make -n fmt >/dev/null 2>&1; then
+            echo 'fmt=make fmt' >> "$GITHUB_OUTPUT"
+            echo 'fmtsrc=Makefile target fmt' >> "$GITHUB_OUTPUT"
+          else
+            echo 'fmt=cargo fmt --all -- --check' >> "$GITHUB_OUTPUT"
+            echo 'fmtsrc=fallback cargo fmt' >> "$GITHUB_OUTPUT"
+          fi
+          if [ -f Makefile ] && make -n clippy >/dev/null 2>&1; then
+            echo 'clippy=make clippy' >> "$GITHUB_OUTPUT"
+            echo 'clippysrc=Makefile target clippy' >> "$GITHUB_OUTPUT"
+          else
+            echo 'clippy=cargo clippy --all-targets --all-features -- -D warnings' >> "$GITHUB_OUTPUT"
+            echo 'clippysrc=fallback cargo clippy' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check formatting
+        env:
+          CMD: ${{ steps.cmd.outputs.fmt }}
+          SRC: ${{ steps.cmd.outputs.fmtsrc }}
+        run: |
+          set -euo pipefail
+          printf -- '- fmt: %s\n' "$SRC" >> "$GITHUB_STEP_SUMMARY"
+          eval "$CMD"
+
+      - name: Run clippy
+        env:
+          CMD: ${{ steps.cmd.outputs.clippy }}
+          SRC: ${{ steps.cmd.outputs.clippysrc }}
+        run: |
+          set -euo pipefail
+          printf -- '- clippy: %s\n' "$SRC" >> "$GITHUB_STEP_SUMMARY"
+          eval "$CMD"
+
+  audit:
+    name: Security Audit
+    if: ${{ !inputs.skip-audit }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ inputs.toolchain }}
+
+      # Prebuilt binary (seconds) rather than `cargo install` from source (minutes).
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+
+      - name: Resolve audit command
+        id: cmd
+        run: |
+          set -euo pipefail
+          if [ -f Makefile ] && make -n audit >/dev/null 2>&1; then
+            echo 'run=make audit' >> "$GITHUB_OUTPUT"
+            echo 'source=Makefile target audit' >> "$GITHUB_OUTPUT"
+          else
+            echo 'run=cargo audit' >> "$GITHUB_OUTPUT"
+            echo 'source=fallback cargo audit' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run audit
+        env:
+          CMD: ${{ steps.cmd.outputs.run }}
+          SRC: ${{ steps.cmd.outputs.source }}
+        run: |
+          set -euo pipefail
+          printf -- '- audit: %s\n' "$SRC" >> "$GITHUB_STEP_SUMMARY"
+          eval "$CMD"
+
+  test:
+    name: Test (ubuntu / ${{ inputs.toolchain }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ inputs.toolchain }}
+
+      - name: Cache build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ inputs.working-directory }}
+          key: ubuntu-${{ inputs.toolchain }}
+
+      - name: Install system dependencies
+        env:
+          DEPS: ${{ inputs.system-deps-ubuntu }}
+        run: |
+          set -euo pipefail
+          if [ -n "$DEPS" ]; then
+            sudo apt-get update
+            # shellcheck disable=SC2086
+            sudo apt-get install -y $DEPS
+          fi
+
+      - name: Resolve commands
+        id: cmd
+        run: |
+          set -euo pipefail
+          if [ -f Makefile ] && make -n build >/dev/null 2>&1; then
+            echo 'build=make build' >> "$GITHUB_OUTPUT"
+            echo 'buildsrc=Makefile target build' >> "$GITHUB_OUTPUT"
+          else
+            echo 'build=cargo build --all-features' >> "$GITHUB_OUTPUT"
+            echo 'buildsrc=fallback cargo build' >> "$GITHUB_OUTPUT"
+          fi
+          if [ -f Makefile ] && make -n test >/dev/null 2>&1; then
+            echo 'test=make test' >> "$GITHUB_OUTPUT"
+            echo 'testsrc=Makefile target test' >> "$GITHUB_OUTPUT"
+          else
+            echo 'test=cargo test --all-features' >> "$GITHUB_OUTPUT"
+            echo 'testsrc=fallback cargo test' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build
+        env:
+          CMD: ${{ steps.cmd.outputs.build }}
+          SRC: ${{ steps.cmd.outputs.buildsrc }}
+        run: |
+          set -euo pipefail
+          printf -- '- build: %s\n' "$SRC" >> "$GITHUB_STEP_SUMMARY"
+          eval "$CMD"
+
+      - name: Run tests
+        env:
+          CMD: ${{ steps.cmd.outputs.test }}
+          SRC: ${{ steps.cmd.outputs.testsrc }}
+        run: |
+          set -euo pipefail
+          printf -- '- test: %s\n' "$SRC" >> "$GITHUB_STEP_SUMMARY"
+          eval "$CMD"
+
+  test-extended:
+    name: Test Extended (${{ matrix.os }} / ${{ matrix.toolchain }})
+    if: inputs.run-extended
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(inputs.extended-matrix) }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+
+      - name: Cache build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ inputs.working-directory }}
+          key: ${{ matrix.os }}-${{ matrix.toolchain }}
+
+      - name: Install system dependencies (Ubuntu)
+        if: startsWith(matrix.os, 'ubuntu')
+        env:
+          DEPS: ${{ inputs.system-deps-ubuntu }}
+        run: |
+          set -euo pipefail
+          if [ -n "$DEPS" ]; then
+            sudo apt-get update
+            # shellcheck disable=SC2086
+            sudo apt-get install -y $DEPS
+          fi
+
+      - name: Install system dependencies (macOS)
+        if: startsWith(matrix.os, 'macos')
+        env:
+          DEPS: ${{ inputs.system-deps-macos }}
+        run: |
+          set -euo pipefail
+          if [ -n "$DEPS" ]; then
+            # shellcheck disable=SC2086
+            brew install $DEPS
+          fi
+
+      - name: Resolve commands
+        id: cmd
+        run: |
+          set -euo pipefail
+          if [ -f Makefile ] && make -n build >/dev/null 2>&1; then
+            echo 'build=make build' >> "$GITHUB_OUTPUT"
+          else
+            echo 'build=cargo build --all-features' >> "$GITHUB_OUTPUT"
+          fi
+          if [ -f Makefile ] && make -n test >/dev/null 2>&1; then
+            echo 'test=make test' >> "$GITHUB_OUTPUT"
+          else
+            echo 'test=cargo test --all-features' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build
+        env:
+          CMD: ${{ steps.cmd.outputs.build }}
+        run: |
+          set -euo pipefail
+          eval "$CMD"
+
+      - name: Run tests
+        env:
+          CMD: ${{ steps.cmd.outputs.test }}
+        run: |
+          set -euo pipefail
+          eval "$CMD"
+
+  docs:
+    name: Documentation
+    if: inputs.build-docs
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ inputs.toolchain }}
+
+      - name: Cache build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ inputs.working-directory }}
+
+      - name: Install system dependencies
+        env:
+          DEPS: ${{ inputs.system-deps-ubuntu }}
+        run: |
+          set -euo pipefail
+          if [ -n "$DEPS" ]; then
+            sudo apt-get update
+            # shellcheck disable=SC2086
+            sudo apt-get install -y $DEPS
+          fi
+
+      - name: Resolve docs command
+        id: cmd
+        run: |
+          set -euo pipefail
+          if [ -f Makefile ] && make -n docs >/dev/null 2>&1; then
+            echo 'run=make docs' >> "$GITHUB_OUTPUT"
+          else
+            echo 'run=cargo doc --no-deps --all-features' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build documentation
+        env:
+          CMD: ${{ steps.cmd.outputs.run }}
+        run: |
+          set -euo pipefail
+          eval "$CMD"
+
+      - name: Upload documentation
+        uses: actions/upload-artifact@v7
+        with:
+          name: documentation
+          path: ${{ inputs.working-directory }}/target/doc
