@@ -131,8 +131,21 @@ Secrets, all optional: `HOMEBREW_TAP_TOKEN`, `SCOOP_BUCKET_TOKEN`,
 `GPG_PRIVATE_KEY`. Pass them explicitly rather than with `secrets: inherit` so
 the blast radius of a token stays visible in the caller.
 
-No repository consumes this yet. `forge`, `forgeui` and `smart-form` already
-carry a `.goreleaser.yml` and are the intended first consumers.
+### Docker, packages and cross-repo pushes
+
+Opt-in, all defaulting off, so a Homebrew-only consumer is unaffected:
+
+- `docker: true` sets up QEMU, Buildx and a registry login (`registry`,
+  default `ghcr.io`). A `.goreleaser.yml` with `dockers` or `docker_manifests`
+  **cannot** cross-build architectures without QEMU.
+- `go-version-file: go.mod` reads the version from the module instead of
+  duplicating it in the caller.
+- Optional secrets: `GORELEASER_TOKEN` (preferred over `GITHUB_TOKEN` when
+  GoReleaser pushes to a tap or bucket in another repo — it falls back to
+  `GITHUB_TOKEN`), `FURY_TOKEN` (Gemfury, for `nfpms` deb/rpm), and `AUR_KEY`.
+
+`forge` is the first consumer. `forgeui` and `smart-form` also carry a
+`.goreleaser.yml` and are the obvious next ones.
 
 ## semantic-release
 

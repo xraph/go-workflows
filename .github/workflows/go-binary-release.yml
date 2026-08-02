@@ -6,6 +6,18 @@ on:
       go-version:
         type: string
         default: '1.25'
+      go-version-file:
+        description: 'Read the Go version from this file instead of go-version. Avoids duplicating the version in two places.'
+        type: string
+        default: ''
+      docker:
+        description: 'Set up QEMU, Buildx and a registry login. Required for a .goreleaser.yml with dockers/docker_manifests, which cannot cross-build without QEMU.'
+        type: boolean
+        default: false
+      registry:
+        description: 'Container registry to log into when docker is true.'
+        type: string
+        default: 'ghcr.io'
       goreleaser-version:
         type: string
         default: 'v2.17.1'
@@ -21,6 +33,15 @@ on:
       SCOOP_BUCKET_TOKEN:
         required: false
       GPG_PRIVATE_KEY:
+        required: false
+      GORELEASER_TOKEN:
+        description: 'Preferred over GITHUB_TOKEN when GoReleaser pushes to other repos (a Homebrew tap, a Scoop bucket). Falls back to GITHUB_TOKEN.'
+        required: false
+      FURY_TOKEN:
+        description: 'Gemfury, for nfpms deb/rpm publishing.'
+        required: false
+      AUR_KEY:
+        description: 'Arch User Repository SSH key.'
         required: false
 
 jobs:
@@ -38,7 +59,9 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: ${{ inputs.go-version }}
+          # go-version-file wins when set; setup-go ignores go-version then.
+          go-version: ${{ inputs.go-version-file == '' && inputs.go-version || '' }}
+          go-version-file: ${{ inputs.go-version-file }}
           cache-dependency-path: ${{ inputs.working-directory }}/go.mod
 
       - name: Confirm a GoReleaser config is present
@@ -53,6 +76,22 @@ jobs:
             echo "This workflow expects the consumer repository to own its GoReleaser config."
             exit 1
           fi
+
+      - name: Set up QEMU
+        if: inputs.docker
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        if: inputs.docker
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to the container registry
+        if: inputs.docker
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ inputs.registry }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Check for a GPG key
         id: gpgcheck
@@ -86,7 +125,11 @@ jobs:
           args: ${{ inputs.goreleaser-args }}
           workdir: ${{ inputs.working-directory }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # GORELEASER_TOKEN when supplied: cross-repo pushes (tap, bucket) need
+          # broader scope than the run's own GITHUB_TOKEN carries.
+          GITHUB_TOKEN: ${{ secrets.GORELEASER_TOKEN || secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           SCOOP_BUCKET_TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN }}
+          FURY_TOKEN: ${{ secrets.FURY_TOKEN }}
+          AUR_KEY: ${{ secrets.AUR_KEY }}
           GPG_FINGERPRINT: ${{ steps.gpg.outputs.fingerprint }}
