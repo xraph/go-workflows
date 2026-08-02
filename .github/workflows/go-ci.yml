@@ -39,6 +39,22 @@ on:
       skip-security:
         type: boolean
         default: false
+      node-version:
+        description: 'Set up Node at this version before running tests. Empty means no Node. Needed by Go projects whose tests shell out to a JS toolchain.'
+        type: string
+        default: ''
+      npm-global-packages:
+        description: 'Space-separated npm specs to install globally, e.g. "typescript@5.8.2 esbuild@0.28.1". Requires node-version.'
+        type: string
+        default: ''
+      prefer-makefile:
+        description: 'Use a Makefile target when one matching the step exists. Set false to force the plain go commands - a repo whose make targets do something broader than CI wants (e.g. sweeping every module) needs this.'
+        type: boolean
+        default: true
+      only-test:
+        description: 'Run only the test matrix, skipping lint, verify and security. Lets a caller split gating from non-gating across two calls.'
+        type: boolean
+        default: false
       gosec-fail-on-findings:
         description: 'Fail the build on gosec findings. SARIF is uploaded either way.'
         type: boolean
@@ -111,14 +127,32 @@ jobs:
           go-version: ${{ matrix.go-version }}
           cache-dependency-path: ${{ inputs.working-directory }}/go.mod
 
+      - name: Set up Node.js
+        if: inputs.node-version != ''
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Install global npm packages
+        if: inputs.node-version != '' && inputs.npm-global-packages != ''
+        env:
+          NPM_PACKAGES: ${{ inputs.npm-global-packages }}
+        run: |
+          set -euo pipefail
+          # npm specs never contain spaces; word splitting is intended.
+          # shellcheck disable=SC2086
+          npm install -g -- $NPM_PACKAGES
+
       - name: Download dependencies
         run: go mod download
 
       - name: Resolve test command
         id: cmd
+        env:
+          PREFER_MAKEFILE: ${{ inputs.prefer-makefile }}
         run: |
           set -euo pipefail
-          if [ -f Makefile ] && make -n test >/dev/null 2>&1; then
+          if [ "$PREFER_MAKEFILE" = 'true' ] && [ -f Makefile ] && make -n test >/dev/null 2>&1; then
             echo 'run=make test' >> "$GITHUB_OUTPUT"
             # shellcheck disable=SC2016 # backticks are literal markdown formatting, not command substitution
             echo 'source=Makefile target `test`' >> "$GITHUB_OUTPUT"
@@ -146,9 +180,11 @@ jobs:
       - name: Resolve coverage command
         id: covcmd
         if: inputs.coverage && matrix.os == 'ubuntu-latest' && matrix.go-version == needs.setup.outputs.primary-go-version
+        env:
+          PREFER_MAKEFILE: ${{ inputs.prefer-makefile }}
         run: |
           set -euo pipefail
-          if [ -f Makefile ] && make -n test-coverage >/dev/null 2>&1; then
+          if [ "$PREFER_MAKEFILE" = 'true' ] && [ -f Makefile ] && make -n test-coverage >/dev/null 2>&1; then
             echo 'run=make test-coverage' >> "$GITHUB_OUTPUT"
             # shellcheck disable=SC2016 # backticks are literal markdown formatting, not command substitution
             echo 'source=Makefile target `test-coverage`' >> "$GITHUB_OUTPUT"
@@ -210,6 +246,7 @@ jobs:
 
   lint:
     name: Lint
+    if: ${{ !inputs.only-test }}
     needs: setup
     runs-on: ubuntu-latest
     permissions:
@@ -233,6 +270,7 @@ jobs:
 
   verify:
     name: Verify
+    if: ${{ !inputs.only-test }}
     needs: setup
     runs-on: ubuntu-latest
     permissions:
@@ -263,9 +301,11 @@ jobs:
 
       - name: Resolve vet command
         id: vetcmd
+        env:
+          PREFER_MAKEFILE: ${{ inputs.prefer-makefile }}
         run: |
           set -euo pipefail
-          if [ -f Makefile ] && make -n vet >/dev/null 2>&1; then
+          if [ "$PREFER_MAKEFILE" = 'true' ] && [ -f Makefile ] && make -n vet >/dev/null 2>&1; then
             echo 'run=make vet' >> "$GITHUB_OUTPUT"
             # shellcheck disable=SC2016 # backticks are literal markdown formatting, not command substitution
             echo 'source=Makefile target `vet`' >> "$GITHUB_OUTPUT"
@@ -293,7 +333,7 @@ jobs:
   security:
     name: Security
     needs: setup
-    if: ${{ !inputs.skip-security }}
+    if: ${{ !inputs.skip-security && !inputs.only-test }}
     runs-on: ubuntu-latest
     permissions:
       contents: read

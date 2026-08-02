@@ -177,6 +177,34 @@ protected without an allowance for `github-actions[bot]`, that push fails and
 the release aborts partway. Either exempt the bot, or drop
 `@semantic-release/git` and let the changelog live only in the GitHub release.
 
+## Go projects that need a JS toolchain
+
+Some Go tests shell out to Node — generated-client suites that bundle an
+emitted TypeScript client and execute it, for example. Two inputs cover that:
+
+```yaml
+node-version: '22'
+npm-global-packages: 'typescript@5.8.2 esbuild@0.28.1'
+```
+
+Both default to empty, so nothing is installed unless asked.
+
+## Escaping the Makefile probe
+
+`go-ci.yml` prefers a Makefile target when one matching the step exists. That
+is usually what you want — but a repo whose `make test` sweeps every module in
+a monorepo, while its CI deliberately tests only the root module, would get a
+much broader (and slower) run than intended. Pass `prefer-makefile: false` to
+force the plain `go` commands.
+
+## Splitting gating from non-gating
+
+`only-test: true` runs just the test matrix, skipping lint, verify and
+security. A caller whose required check must not go red on an optional
+platform calls the workflow twice: once with the defaults (blocking) and once
+with `only-test` for the optional leg, leaving that one out of the gate's
+`needs`.
+
 ## Security reporting
 
 `go-ci.yml` runs gosec with `-no-fail -fmt sarif` and uploads the result, so

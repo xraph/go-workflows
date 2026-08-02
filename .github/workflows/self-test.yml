@@ -98,6 +98,24 @@ jobs:
     with:
       dry-run: true
 
+  smoke-go-node:
+    name: Smoke — Go with a Node toolchain
+    permissions:
+      contents: read
+      security-events: write
+    uses: ./.github/workflows/go-ci.yml
+    with:
+      working-directory: testdata/fixture-go-node
+      go-versions: '["1.26"]'
+      os: '["ubuntu-latest"]'
+      node-version: '22'
+      npm-global-packages: 'esbuild@0.28.1'
+      # The fixture's Makefile `test` target exits 1 on purpose. Passing here
+      # proves the probe was genuinely bypassed, not merely that make was absent.
+      prefer-makefile: false
+      only-test: true
+      coverage: false
+
   smoke-rust-make:
     name: Smoke — Rust partial Makefile
     permissions:
