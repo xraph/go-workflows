@@ -359,7 +359,7 @@ jobs:
         run: |
           set -euo pipefail
           go install "github.com/securego/gosec/v2/cmd/gosec@${GOSEC_VERSION}"
-          gosec -no-fail -fmt sarif -out gosec.sarif -exclude=G115 -exclude-dir=vendor ./...
+          gosec -no-fail -fmt sarif -out gosec.sarif -exclude=G115 -exclude-dir=vendor -exclude-generated ./...
 
       - name: Determine whether SARIF can be uploaded
         id: sarif
