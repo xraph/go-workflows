@@ -55,6 +55,10 @@ on:
         description: 'Run only the test matrix, skipping lint, verify and security. Lets a caller split gating from non-gating across two calls.'
         type: boolean
         default: false
+      govulncheck-fail-on-findings:
+        description: 'Fail the build on govulncheck findings. Set false when a reachable advisory has no published fix - otherwise CI blocks indefinitely on something nobody can act on. Findings are always reported.'
+        type: boolean
+        default: true
       gosec-fail-on-findings:
         description: 'Fail the build on gosec findings. SARIF is uploaded either way.'
         type: boolean
@@ -402,7 +406,19 @@ jobs:
       - name: Run govulncheck
         env:
           GOVULNCHECK_VERSION: ${{ inputs.govulncheck-version }}
+          FAIL_ON_FINDINGS: ${{ inputs.govulncheck-fail-on-findings }}
         run: |
           set -euo pipefail
           go install "golang.org/x/vuln/cmd/govulncheck@$GOVULNCHECK_VERSION"
-          govulncheck ./...
+          # Always report; decide separately whether findings block the build.
+          if govulncheck ./... 2>&1 | tee govulncheck.log; then
+            echo "- govulncheck: no reachable vulnerabilities" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          COUNT=$(grep -c '^Vulnerability #' govulncheck.log || true)
+          echo "- govulncheck: **${COUNT}** reachable vulnerabilities" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$FAIL_ON_FINDINGS" = 'true' ]; then
+            echo "Failing because govulncheck-fail-on-findings is true."
+            exit 1
+          fi
+          echo "govulncheck-fail-on-findings is false; reporting only." 

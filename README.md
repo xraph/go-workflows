@@ -225,6 +225,18 @@ skipped; fix such findings in the source template instead.
 `codeql.yml` defaults to the `security-extended,security-and-quality` query
 packs. Pass `queries: ''` for CodeQL's standard set.
 
+### When an advisory has no fix
+
+`govulncheck` reports only *reachable* vulnerabilities, so its findings are
+real. But an advisory sometimes has no published patch — govulncheck prints
+`Fixed in: N/A` — and then a repo's CI blocks indefinitely on something nobody
+can act on.
+
+`govulncheck-fail-on-findings: false` keeps the scan running and reporting
+while letting the build pass. Name the specific advisory in a comment where you
+set it, and flip it back when upstream ships a fix. `gosec-fail-on-findings`
+behaves the same way, and both default to `true`.
+
 ## Rust track
 
 `rust-ci.yml` runs lint (rustfmt + clippy), a security audit (`cargo-audit`),
