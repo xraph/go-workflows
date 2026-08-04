@@ -48,6 +48,29 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Drop local tags before semantic-release refetches them
+        shell: bash
+        run: |
+          set -euo pipefail
+          # semantic-release runs `git fetch --tags` without --force. If any tag
+          # moved since checkout wrote it, git refuses:
+          #
+          #   ! [rejected] v1 -> v1 (would clobber existing tag)
+          #
+          # and semantic-release exits 1 before computing anything. A repository
+          # publishing a moving major tag hits this every release — this one did.
+          #
+          # Deleting the local tags first means that fetch has nothing to
+          # clobber and repopulates them from the remote. It cannot lose data:
+          # the workspace is ephemeral and the tags live on the remote. Doing it
+          # here rather than fetching with --force keeps the checkout's
+          # persist-credentials: false intact — semantic-release brings its own
+          # authenticated remote.
+          if [ -n "$(git tag -l)" ]; then
+            git tag -l | xargs git tag -d >/dev/null
+            echo "Dropped local tags; semantic-release will refetch them."
+          fi
+
       - name: Check the verified commit is still the branch tip
         id: freshness
         shell: bash
