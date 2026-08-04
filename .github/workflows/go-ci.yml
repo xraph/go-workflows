@@ -381,6 +381,13 @@ jobs:
 
       - name: Upload gosec SARIF
         if: steps.sarif.outputs.upload == 'true'
+        # Best-effort. Code scanning ingest needs GitHub Advanced Security on a
+        # private repository; without it this returns 403 and there is nothing
+        # the consumer can do about it from a workflow. Failing here would gate
+        # merges on a billing setting rather than on the code, and the findings
+        # are not lost: the next step reports them in the run summary and fails
+        # the job when gosec-fail-on-findings is set.
+        continue-on-error: true
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: ${{ inputs.working-directory }}/gosec.sarif
