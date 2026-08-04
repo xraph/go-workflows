@@ -133,3 +133,47 @@ jobs:
     with:
       working-directory: testdata/fixture-rust
       skip-audit: false
+
+  # A single stable check for branch protection to require.
+  #
+  # Requiring the individual jobs does not work here: their check names carry
+  # matrix values and pinned toolchain versions — "Test (ubuntu-latest, go1.26)",
+  # "Test (ubuntu / stable)" — so bumping Go or Rust would rename the required
+  # check, and a required check that never reports blocks every merge silently.
+  # Two of the nested names even contain unexpanded ${{ matrix.* }} expressions.
+  #
+  # This job's name never changes, so protection can require exactly one check
+  # and still gate on all of them.
+  gate:
+    name: Self Test Gate
+    # always() so the gate still reports when something upstream failed;
+    # without it this job would be skipped and the check would never arrive.
+    if: always()
+    needs:
+      - actionlint
+      - fixtures
+      - smoke-fallback
+      - smoke-partial-make
+      - smoke-nodeps
+      - smoke-semantic-release
+      - smoke-go-node
+      - smoke-rust-make
+      - smoke-rust
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check every gating job succeeded
+        shell: bash
+        env:
+          # Read through env, never interpolated into the script body: a
+          # ${{ }} value is substituted into the source before bash parses it.
+          RESULTS: ${{ join(needs.*.result, ',') }}
+        run: |
+          set -euo pipefail
+          echo "upstream results: $RESULTS"
+          case ",$RESULTS," in
+            *,failure,*|*,cancelled,*|*,timed_out,*)
+              echo "Self Test failed — see the job that reported it above."
+              exit 1
+              ;;
+          esac
+          echo "All gating jobs passed." >> "$GITHUB_STEP_SUMMARY"
