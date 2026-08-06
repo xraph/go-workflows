@@ -1,0 +1,191 @@
+name: NPM Publish
+
+# Publishes one or more npm packages from a repository, in a caller-supplied
+# order, from a single job.
+#
+# ORDER IS THE REASON THIS IS SEQUENTIAL rather than a matrix. A repository
+# publishing a core package plus adapters that peer-depend on it must publish
+# the core first, and the adapters must build against the core's freshly built
+# dist rather than against whatever the registry last served. One job with an
+# ordered list gives both; a matrix gives neither.
+
+on:
+  workflow_call:
+    inputs:
+      packages:
+        description: >-
+          JSON array of package directories, in publish order, e.g.
+          '["packages/core","packages/react"]'. Dependencies first.
+        type: string
+        required: true
+      node-version:
+        description: >-
+          Node major. Defaults to 24 rather than an LTS on purpose: npm 10 (Node
+          20 and 22) fails `npm ci` on lockfiles carrying a nested esbuild,
+          because it records that copy's per-platform packages without the
+          `optional` flag and then treats an aix-only binary as required on
+          linux. npm 11 skips them correctly.
+        type: string
+        default: '24'
+      version:
+        description: >-
+          Version to stamp on every package before publishing, without a leading
+          v. Empty publishes each package at the version already in its
+          package.json.
+        type: string
+        default: ''
+      dry-run:
+        description: >-
+          Pack and validate without publishing. The default is true so that a
+          misconfigured caller rehearses instead of claiming a package name --
+          npm unpublish is heavily restricted, so a wrong first publish is not
+          reversible.
+        type: boolean
+        default: true
+      access:
+        description: >-
+          npm access for the published package. Scoped packages default to
+          restricted on npm, which fails a first publish on a free account, so
+          this defaults to public.
+        type: string
+        default: 'public'
+      build-script:
+        description: 'npm script to run before publishing. Empty skips the build.'
+        type: string
+        default: 'build'
+      registry-url:
+        type: string
+        default: 'https://registry.npmjs.org'
+    secrets:
+      NPM_TOKEN:
+        description: 'Automation token with publish rights. Not required for a dry run.'
+        required: false
+    outputs:
+      published:
+        description: 'JSON array of "name@version" strings actually published. Empty on a dry run.'
+        value: ${{ jobs.publish.outputs.published }}
+
+jobs:
+  publish:
+    name: Publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      published: ${{ steps.publish.outputs.published }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ inputs.node-version }}
+          registry-url: ${{ inputs.registry-url }}
+
+      - name: Validate inputs
+        shell: bash
+        env:
+          PACKAGES: ${{ inputs.packages }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+
+          # Fail on a malformed list here rather than half way through a publish
+          # loop, where the packages before the bad entry are already public.
+          if ! printf '%s' "$PACKAGES" | jq -e 'type == "array" and length > 0' >/dev/null; then
+            echo "::error::packages must be a non-empty JSON array"
+            exit 1
+          fi
+
+          while read -r dir; do
+            if [ ! -f "$dir/package.json" ]; then
+              echo "::error::no package.json at $dir"
+              exit 1
+            fi
+          done < <(printf '%s' "$PACKAGES" | jq -r '.[]')
+
+          if [ -n "$VERSION" ] && ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-+].+)?$'; then
+            echo "::error::version must be semver without a leading v, got '$VERSION'"
+            exit 1
+          fi
+
+      - name: Require a token for a real publish
+        if: ${{ !inputs.dry-run }}
+        shell: bash
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NPM_TOKEN:-}" ]; then
+            echo "::error::dry-run is false but no NPM_TOKEN was passed"
+            exit 1
+          fi
+
+      - name: Publish
+        id: publish
+        shell: bash
+        env:
+          PACKAGES: ${{ inputs.packages }}
+          VERSION: ${{ inputs.version }}
+          DRY_RUN: ${{ inputs.dry-run }}
+          ACCESS: ${{ inputs.access }}
+          BUILD_SCRIPT: ${{ inputs.build-script }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          PUBLISHED='[]'
+
+          while read -r dir; do
+            name=$(jq -r .name "$dir/package.json")
+            echo "::group::$name ($dir)"
+            pushd "$dir" >/dev/null
+
+            # `npm ci` when a lockfile is committed, `npm install` otherwise.
+            # `ci` is the stricter of the two and additionally fails when the
+            # lockfile and package.json disagree, so prefer it whenever it can
+            # run at all.
+            if [ -f package-lock.json ]; then npm ci; else npm install; fi
+
+            if [ -n "$BUILD_SCRIPT" ]; then
+              npm run "$BUILD_SCRIPT"
+            fi
+
+            # --no-git-tag-version: the caller's tag is the source of truth and
+            # this workspace is thrown away. Committing or tagging here would
+            # push a second tag for the release that triggered the run.
+            if [ -n "$VERSION" ]; then
+              npm version "$VERSION" --no-git-tag-version --allow-same-version
+            fi
+
+            published_version=$(jq -r .version package.json)
+
+            if [ "$DRY_RUN" = "true" ]; then
+              npm publish --dry-run --access "$ACCESS"
+              echo "would publish $name@$published_version"
+            else
+              npm publish --access "$ACCESS"
+              PUBLISHED=$(printf '%s' "$PUBLISHED" | jq -c --arg e "$name@$published_version" '. + [$e]')
+            fi
+
+            popd >/dev/null
+            echo "::endgroup::"
+          done < <(printf '%s' "$PACKAGES" | jq -r '.[]')
+
+          echo "published=$PUBLISHED" >> "$GITHUB_OUTPUT"
+
+      - name: Summary
+        if: always()
+        shell: bash
+        env:
+          DRY_RUN: ${{ inputs.dry-run }}
+          PUBLISHED: ${{ steps.publish.outputs.published }}
+        run: |
+          set -euo pipefail
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "Dry run - nothing was published." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Published:" >> "$GITHUB_STEP_SUMMARY"
+            printf '%s' "${PUBLISHED:-[]}" | jq -r '.[] | "- `\(.)`"' >> "$GITHUB_STEP_SUMMARY"
+          fi
