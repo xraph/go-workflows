@@ -50,6 +50,24 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      # Required whenever `docker: true`: the login below authenticates to the
+      # registry as GITHUB_TOKEN, and pushing to ghcr.io needs package write.
+      #
+      # This block is the authoritative one for this job -- a caller's
+      # `permissions:` cannot widen what a reusable workflow declares -- and once
+      # any block exists, everything unlisted is `none`. So callers that did
+      # declare `packages: write` themselves still got `packages: none` here, and
+      # the push failed after a full build with
+      #
+      #   denied: installation not allowed to Write organization package
+      #
+      # which reads like a registry ACL problem and is not one: the token has no
+      # packages scope to exercise. Granting the repository write access on the
+      # package does not change it.
+      #
+      # Harmless when `docker` is false -- nothing authenticates to a registry
+      # on that path, so the scope goes unused.
+      packages: write
     steps:
       - name: Checkout
         uses: actions/checkout@v7
